@@ -1,0 +1,64 @@
+spring:
+  application:
+    name: order-service-test
+  datasource:
+    url: jdbc:tc:postgresql:15.4:///orderdb
+    username: test
+    password: test
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    show-sql: false
+  flyway:
+    enabled: true
+  rabbitmq:
+    host: localhost
+    port: 5672
+
+adaptiveops:
+  outbox:
+    enabled: true
+    polling-interval-ms: 60000
+    batch-size: 50
+    max-retries: 5
+  rabbitmq:
+    exchange: orders.topic.exchange
+    order-created-routing-key: order.event.created
+    order-status-changed-routing-key: order.event.status-changed
+    order-cancelled-routing-key: order.event.cancelled
+    dead-letter-exchange: orders.dlx
+    dead-letter-queue: orders.dead-letter.queue
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+    prometheus:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+    db:
+      enabled: true
+    rabbit:
+      enabled: false
+
+logging:
+  level:
+    com.adaptiveops: DEBUG
+    org.springframework.web: INFO

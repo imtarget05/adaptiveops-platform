@@ -1,0 +1,79 @@
+# deploy/azure-pipelines.yml - Multi-Stage Azure DevOps Pipeline
+trigger:
+  branches:
+    include:
+      - main
+      - release/*
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-22.04'
+
+variables:
+  ADAPTIVEOPS_ALLOW_CLOUD_CHARGES: 'false'
+
+stages:
+  - stage: QualityGates
+    displayName: 'CI Quality Gates'
+    jobs:
+      - job: LintAndValidate
+        displayName: 'ShellCheck, Helm & Terraform Lint'
+        steps:
+          - script: |
+              sudo apt-get update && sudo apt-get install -y shellcheck
+              shellcheck -s bash scripts/*.sh scripts/lib/*.sh
+            displayName: 'Run ShellCheck'
+
+          - script: |
+              curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+              helm lint deploy/helm/adaptiveops-order-service
+            displayName: 'Run Helm Lint'
+
+          - script: |
+              terraform -chdir=deploy/terraform/aws fmt -check
+              terraform -chdir=deploy/terraform/azure fmt -check
+            displayName: 'Validate Terraform Format'
+
+      - job: BackendTests
+        displayName: 'Spring Boot Tests'
+        steps:
+          - task: JavaToolInstaller@0
+            inputs:
+              versionSpec: '21'
+              jdkArchitectureOption: 'x64'
+              jdkSourceOption: 'PreInstalled'
+          - script: |
+              cd order-service
+              ./mvnw clean test verify
+            displayName: 'Execute Maven Unit & Integration Tests'
+
+  - stage: DeployLocal
+    displayName: 'Deploy & Verify Local / Kubernetes'
+    dependsOn: QualityGates
+    condition: succeeded()
+    jobs:
+      - job: DeployAndSmokeTest
+        displayName: 'Deploy and Smoke Test'
+        steps:
+          - script: |
+              chmod +x scripts/*.sh scripts/lib/*.sh
+              ./scripts/deploy.sh --target local --version $(Build.BuildId)
+            displayName: 'Deploy via Docker Compose'
+          - script: |
+              ./scripts/health_check.sh --endpoint "http://localhost:8080/actuator/health" --timeout 60
+            displayName: 'Execute Health Check'
+
+  - stage: RollbackOnFailure
+    displayName: 'Automated Rollback'
+    dependsOn: DeployLocal
+    condition: failed()
+    jobs:
+      - job: ExecuteRollback
+        displayName: 'Rollback Deployment'
+        steps:
+          - script: |
+              ./scripts/rollback.sh --target local --reason "Azure DevOps deploy failure"
+            displayName: 'Trigger Rollback Script'

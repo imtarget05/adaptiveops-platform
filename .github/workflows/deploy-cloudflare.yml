@@ -1,0 +1,88 @@
+name: Deploy Cloudflare Preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adaptiveops-cloudflare-preview
+  cancel-in-progress: false
+
+jobs:
+  deploy-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: cloudflare-preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+
+      - name: Require isolated preview configuration and rotated credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PREVIEW_D1_ID: ${{ vars.CLOUDFLARE_PREVIEW_D1_ID }}
+          CLOUDFLARE_PREVIEW_ADMIN_API_KEY: ${{ secrets.CLOUDFLARE_PREVIEW_ADMIN_API_KEY }}
+          CLOUDFLARE_PREVIEW_WEBHOOK_SECRET: ${{ secrets.CLOUDFLARE_PREVIEW_WEBHOOK_SECRET }}
+          CONTROL_PLANE_PREVIEW_URL: ${{ vars.CONTROL_PLANE_PREVIEW_URL }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_PREVIEW_D1_ID"
+          test -n "$CLOUDFLARE_PREVIEW_ADMIN_API_KEY"
+          test -n "$CLOUDFLARE_PREVIEW_WEBHOOK_SECRET"
+          test -n "$CONTROL_PLANE_PREVIEW_URL"
+
+      - name: Install locked control-plane dependencies
+        run: npm ci
+        working-directory: control-plane
+
+      - name: Render an isolated preview-only Worker config
+        env:
+          CLOUDFLARE_PREVIEW_D1_ID: ${{ vars.CLOUDFLARE_PREVIEW_D1_ID }}
+        run: bash scripts/render-cloudflare-preview-config.sh
+
+      - name: Apply D1 migrations to the preview database
+        run: npx wrangler d1 migrations apply adaptiveops-d1-preview --remote --env preview --config wrangler.preview.generated.toml
+        working-directory: control-plane
+
+      - name: Set preview-only Worker secrets
+        env:
+          CLOUDFLARE_PREVIEW_ADMIN_API_KEY: ${{ secrets.CLOUDFLARE_PREVIEW_ADMIN_API_KEY }}
+          CLOUDFLARE_PREVIEW_WEBHOOK_SECRET: ${{ secrets.CLOUDFLARE_PREVIEW_WEBHOOK_SECRET }}
+        working-directory: control-plane
+        run: |
+          printf '%s' "$CLOUDFLARE_PREVIEW_ADMIN_API_KEY" | npx wrangler secret put ADMIN_API_KEY --env preview --config wrangler.preview.generated.toml
+          printf '%s' "$CLOUDFLARE_PREVIEW_WEBHOOK_SECRET" | npx wrangler secret put GITHUB_WEBHOOK_SECRET --env preview --config wrangler.preview.generated.toml
+
+      - name: Deploy the preview Worker
+        run: npx wrangler deploy --env preview --config wrangler.preview.generated.toml
+        working-directory: control-plane
+
+      - name: Build dashboard
+        run: |
+          npm ci
+          npm run build
+        working-directory: dashboard
+
+      - name: Deploy dashboard to its preview branch
+        run: npx wrangler pages deploy dist --project-name adaptiveops-dashboard-preview --branch preview
+        working-directory: dashboard
+
+      - name: Verify preview health endpoint
+        env:
+          CONTROL_PLANE_PREVIEW_URL: ${{ vars.CONTROL_PLANE_PREVIEW_URL }}
+        run: |
+          response=$(curl --fail --silent --show-error --max-time 10 "$CONTROL_PLANE_PREVIEW_URL/healthz")
+          echo "$response" | jq -e '.status == "UP"'

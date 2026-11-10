@@ -1,0 +1,42 @@
+{
+  "healthy_probe": {
+    "environment": "kubernetes",
+    "service_name": "order-service",
+    "endpoint_url": "http://order-service:8080/actuator/health",
+    "http_status": 200,
+    "latency_ms": 35,
+    "status": "healthy",
+    "probe_type": "readiness",
+    "details": {
+      "db": "UP",
+      "rabbitmq": "UP",
+      "diskSpace": "UP"
+    }
+  },
+  "degraded_probe": {
+    "environment": "kubernetes",
+    "service_name": "order-service",
+    "endpoint_url": "http://order-service:8080/actuator/health",
+    "http_status": 200,
+    "latency_ms": 1850,
+    "status": "degraded",
+    "probe_type": "smoke",
+    "details": {
+      "db": "UP",
+      "latency_warning": "High DB connection acquisition time"
+    }
+  },
+  "unhealthy_probe": {
+    "environment": "kubernetes",
+    "service_name": "order-service",
+    "endpoint_url": "http://order-service:8080/actuator/health",
+    "http_status": 503,
+    "latency_ms": 2500,
+    "status": "unhealthy",
+    "probe_type": "readiness",
+    "details": {
+      "db": "DOWN",
+      "error": "Connection to PostgreSQL host postgres:5432 refused"
+    }
+  }
+}

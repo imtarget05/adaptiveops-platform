@@ -1,0 +1,93 @@
+// deploy/Jenkinsfile - Declarative CI/CD Pipeline for AdaptiveOps
+pipeline {
+    agent any
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        ansiColor('xterm')
+        disableConcurrentBuilds()
+    }
+
+    parameters {
+        choice(name: 'TARGET_PROFILE', choices: ['local', 'kubernetes', 'cloudflare', 'aws', 'azure'], description: 'Deployment execution target')
+        string(name: 'APP_VERSION', defaultValue: '1.0.0', description: 'Application release version')
+        booleanParam(name: 'SIMULATE_FAILURE', defaultValue: false, description: 'Inject deliberate failure to verify automated rollback')
+    }
+
+    environment {
+        BASH_ENV = '/bin/bash'
+        ADAPTIVEOPS_ALLOW_CLOUD_CHARGES = 'false'
+    }
+
+    stages {
+        stage('Lint & Static Analysis') {
+            steps {
+                echo "Running ShellCheck on bash deployment scripts..."
+                sh 'shellcheck scripts/*.sh scripts/lib/*.sh'
+
+                echo "Validating Helm chart syntax..."
+                sh 'helm lint deploy/helm/adaptiveops-order-service'
+
+                echo "Validating Terraform formatting..."
+                sh 'terraform -chdir=deploy/terraform/aws fmt -check'
+                sh 'terraform -chdir=deploy/terraform/azure fmt -check'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                dir('order-service') {
+                    echo "Running Spring Boot unit and integration tests..."
+                    sh './mvnw clean test verify'
+                }
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo "Building Order Service container image..."
+                sh "docker build -t adaptiveops/order-service:${params.APP_VERSION} order-service/"
+            }
+        }
+
+        stage('Security Scan (Trivy)') {
+            steps {
+                echo "Scanning filesystem and container images with Trivy..."
+                sh 'command -v trivy >/dev/null 2>&1 && trivy fs --severity HIGH,CRITICAL . || echo "Trivy not installed in agent image; skipping scan."'
+            }
+        }
+
+        stage('Approval Gate (Cloud Targets)') {
+            when {
+                expression { return params.TARGET_PROFILE == 'aws' || params.TARGET_PROFILE == 'azure' }
+            }
+            steps {
+                input message: "Approve Cloud Deployment Plan for target: ${params.TARGET_PROFILE} (Plan-Only / Zero-Cost)?", ok: "Proceed with Plan Only"
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                script {
+                    sh "scripts/deploy.sh --target ${params.TARGET_PROFILE} --version ${params.APP_VERSION}"
+                }
+            }
+        }
+
+        stage('Smoke Test & Health Verification') {
+            steps {
+                sh "scripts/health_check.sh --target ${params.TARGET_PROFILE} --timeout 60"
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "Deployment or health verification failed. Initiating automated rollback..."
+            sh "scripts/rollback.sh --target ${params.TARGET_PROFILE} --reason 'Pipeline failure detected in Jenkins CI'"
+        }
+        always {
+            cleanWs()
+        }
+    }
+}

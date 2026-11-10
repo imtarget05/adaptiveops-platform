@@ -1,0 +1,45 @@
+{
+  "valid_order": {
+    "customerId": "cust-enterprise-001",
+    "items": [
+      {
+        "sku": "SKU-ADAPT-01",
+        "quantity": 2,
+        "unitPrice": 49.99
+      },
+      {
+        "sku": "SKU-ADAPT-02",
+        "quantity": 1,
+        "unitPrice": 120.00
+      }
+    ],
+    "totalAmount": 219.98
+  },
+  "minimal_order": {
+    "customerId": "cust-simple-002",
+    "items": [
+      {
+        "sku": "SKU-ITEM-MIN",
+        "quantity": 1,
+        "unitPrice": 10.00
+      }
+    ],
+    "totalAmount": 10.00
+  },
+  "zero_amount_order": {
+    "customerId": "cust-zero-003",
+    "items": [
+      {
+        "sku": "SKU-FREE-SAMPLE",
+        "quantity": 1,
+        "unitPrice": 0.00
+      }
+    ],
+    "totalAmount": 0.00
+  },
+  "empty_items_order": {
+    "customerId": "cust-empty-004",
+    "items": [],
+    "totalAmount": 100.00
+  }
+}

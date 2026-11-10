@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  workflow_call:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  JAVA_VERSION: '21'
+  NODE_VERSION: '22'
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: java-backend
+          - name: control-plane-ts
+          - name: dashboard-ts
+          - name: bash-automation
+          - name: terraform-plan
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Java
+        if: matrix.name == 'java-backend'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+          cache-dependency-path: order-service/pom.xml
+
+      - name: Set up Node.js
+        if: matrix.name == 'control-plane-ts' || matrix.name == 'dashboard-ts'
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Set up Terraform
+        if: matrix.name == 'terraform-plan'
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
+        with:
+          terraform_version: '1.9.8'
+
+      - name: Java backend tests
+        if: matrix.name == 'java-backend'
+        run: ./mvnw -B -ntp verify
+        working-directory: order-service
+
+      - name: Control plane tests and typecheck
+        if: matrix.name == 'control-plane-ts'
+        run: |
+          npm ci
+          npm test
+          npm run typecheck
+        working-directory: control-plane
+
+      - name: Dashboard typecheck and build
+        if: matrix.name == 'dashboard-ts'
+        run: |
+          npm ci
+          npm run build
+        working-directory: dashboard
+
+      - name: Bash automation ShellCheck
+        if: matrix.name == 'bash-automation'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck
+          shellcheck scripts/deploy.sh scripts/rollback.sh scripts/health_check.sh scripts/failure_injection.sh scripts/measure.sh scripts/lib/common.sh
+
+      - name: Terraform format and validate AWS
+        if: matrix.name == 'terraform-plan'
+        run: |
+          terraform -chdir=deploy/terraform/aws fmt -check -recursive
+          terraform -chdir=deploy/terraform/aws init -backend=false -input=false
+          terraform -chdir=deploy/terraform/aws validate
+
+      - name: Terraform format and validate Azure
+        if: matrix.name == 'terraform-plan'
+        run: |
+          terraform -chdir=deploy/terraform/azure fmt -check -recursive
+          terraform -chdir=deploy/terraform/azure init -backend=false -input=false
+          terraform -chdir=deploy/terraform/azure validate
+
+  sonarqube:
+    name: SonarQube quality gate
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Require SonarQube Server configuration
+        env:
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          test -n "$SONAR_HOST_URL" || { echo 'SONAR_HOST_URL repository variable is required.'; exit 1; }
+          test -n "$SONAR_TOKEN" || { echo 'SONAR_TOKEN repository secret is required.'; exit 1; }
+
+      - name: Set up Java for Sonar analysis
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Node.js for Sonar analysis
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Compile Java and install JavaScript dependencies
+        run: |
+          (cd order-service && ./mvnw -B -ntp -DskipTests package)
+          npm ci --prefix control-plane
+          npm ci --prefix dashboard
+
+      - name: Run SonarQube analysis and wait for the quality gate
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        env:
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >-
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.java.binaries=order-service/target/classes

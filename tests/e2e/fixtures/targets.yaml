@@ -1,0 +1,71 @@
+version: "1.0.0"
+
+globals:
+  app_name: "adaptiveops"
+  default_target: "local"
+  notification_endpoint: "http://localhost:8787/api/audit"
+  health_check:
+    default_timeout_seconds: 60
+    default_interval_seconds: 5
+    default_retry_count: 5
+
+profiles:
+  local:
+    description: "Local development Docker Compose profile"
+    type: "docker-compose"
+    environment: "development"
+    compose_file: "deploy/docker-compose/docker-compose.yml"
+    workloads:
+      - name: "order-service"
+        port: 8080
+        health_endpoint: "http://localhost:8080/actuator/health"
+    cost_control:
+      chargeable: false
+      budget_limit_usd: 0.00
+      require_approval: false
+
+  kubernetes:
+    description: "Local kind Kubernetes cluster with Helm rolling deployment"
+    type: "helm"
+    environment: "staging"
+    cluster:
+      name: "adaptiveops-cluster"
+      driver: "kind"
+    helm:
+      chart_path: "deploy/helm/adaptiveops-order-service"
+      release_name: "order-service"
+      namespace: "adaptiveops"
+      atomic: true
+      timeout: "180s"
+      wait: true
+    cost_control:
+      chargeable: false
+      budget_limit_usd: 0.00
+
+  cloudflare:
+    description: "Cloudflare Edge Workers + D1 + Pages profile"
+    type: "cloudflare-wrangler"
+    environment: "production"
+    cost_control:
+      chargeable: false
+      budget_limit_usd: 0.00
+
+  aws:
+    description: "Amazon Web Services ECS Fargate target (zero-cost guarded)"
+    type: "terraform-aws"
+    environment: "cloud"
+    cost_control:
+      chargeable: false
+      budget_limit_usd: 0.00
+      plan_only: true
+      require_approval: true
+
+  azure:
+    description: "Microsoft Azure Container Apps target (zero-cost guarded)"
+    type: "terraform-azure"
+    environment: "cloud"
+    cost_control:
+      chargeable: false
+      budget_limit_usd: 0.00
+      plan_only: true
+      require_approval: true

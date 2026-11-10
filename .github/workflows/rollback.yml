@@ -1,0 +1,50 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'local'
+      version:
+        description: 'Target version (auto-resolved from Control Plane if omitted)'
+        required: false
+        default: ''
+      reason:
+        description: 'Rollback reason'
+        required: true
+        default: 'Manual rollback triggered via GitHub Actions'
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve rollback candidate from Control Plane
+        id: candidate
+        run: |
+          CANDIDATE=$(curl -s --max-time 5 "${{ vars.CONTROL_PLANE_URL }}/api/v1/rollback/candidates/${{ inputs.environment }}" || true)
+          VERSION=$(echo "$CANDIDATE" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+          echo "version=${VERSION:-1.0.0}" >> "$GITHUB_OUTPUT"
+
+      - name: Execute controlled rollback
+        run: |
+          bash scripts/rollback.sh \
+            --target "${{ inputs.environment }}" \
+            --to-version "${{ steps.candidate.outputs.version }}" \
+            --reason "${{ inputs.reason }}" \
+            --control-plane-url "${{ vars.CONTROL_PLANE_URL }}"
+        env:
+          CONTROL_PLANE_API_URL: ${{ vars.CONTROL_PLANE_URL }}
+          ADAPTIVEOPS_ALLOW_CLOUD_CHARGES: "false"
+
+      - name: Record rollback audit
+        run: |
+          curl -s -X POST "${{ vars.CONTROL_PLANE_URL }}/api/v1/audit" \
+            -H "Content-Type: application/json" \
+            -d "{\"actor\":\"github-actions\",\"action\":\"ROLLBACK_COMPLETED\",\"target_type\":\"rollback\",\"target_id\":\"${{ github.run_id }\},\"environment\":\"${{ inputs.environment }}\",\"details\":{\"version\":\"${{ steps.candidate.outputs.version }}\",\"reason\":\"${{ inputs.reason }}\",\"run_id\":\"${{ github.run_id }}\"}}"
+        if: vars.CONTROL_PLANE_URL != ''

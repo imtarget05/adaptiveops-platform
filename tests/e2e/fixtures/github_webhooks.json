@@ -1,0 +1,53 @@
+{
+  "deployment_event": {
+    "deployment": {
+      "id": 102938475,
+      "sha": "a1b2c3d4e5f67890123456789abcdef012345678",
+      "ref": "v1.1.0",
+      "task": "deploy",
+      "environment": "kubernetes",
+      "description": "Production release deployment",
+      "creator": {
+        "login": "octocat-deployer",
+        "id": 1
+      }
+    },
+    "repository": {
+      "id": 882910,
+      "name": "adaptiveops-platform",
+      "full_name": "adaptiveops/adaptiveops-platform"
+    }
+  },
+  "deployment_status_success": {
+    "deployment_status": {
+      "id": 204859302,
+      "state": "success",
+      "creator": {
+        "login": "github-actions[bot]"
+      },
+      "description": "Deployment finished successfully",
+      "target_url": "https://dashboard.adaptiveops.internal/deployments/dep-102938475"
+    },
+    "deployment": {
+      "id": 102938475,
+      "sha": "a1b2c3d4e5f67890123456789abcdef012345678",
+      "environment": "kubernetes"
+    }
+  },
+  "deployment_status_failure": {
+    "deployment_status": {
+      "id": 204859399,
+      "state": "failure",
+      "creator": {
+        "login": "smoke-test-runner"
+      },
+      "description": "Health checks failed: readiness probe timed out",
+      "target_url": "https://dashboard.adaptiveops.internal/deployments/dep-102938475"
+    },
+    "deployment": {
+      "id": 102938475,
+      "sha": "badf00d1234567890123456789abcdef01234567",
+      "environment": "kubernetes"
+    }
+  }
+}

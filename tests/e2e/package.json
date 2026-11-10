@@ -1,0 +1,24 @@
+{
+  "name": "adaptiveops-e2e-tests",
+  "version": "1.0.0",
+  "description": "AdaptiveOps Platform Comprehensive Opaque-Box E2E Test Suite",
+  "type": "module",
+  "scripts": {
+    "test": "node runner.mjs",
+    "test:tier1": "node runner.mjs --tier=1",
+    "test:tier2": "node runner.mjs --tier=2",
+    "test:tier3": "node runner.mjs --tier=3",
+    "test:tier4": "node runner.mjs --tier=4",
+    "test:live": "node runner.mjs --live",
+    "test:embedded": "node runner.mjs --embedded"
+  },
+  "keywords": [
+    "e2e",
+    "testing",
+    "adaptiveops",
+    "release-reliability",
+    "dual-track"
+  ],
+  "author": "AdaptiveOps Team",
+  "license": "Apache-2.0"
+}

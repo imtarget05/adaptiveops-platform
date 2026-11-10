@@ -1,0 +1,81 @@
+name: Deploy Azure (Plan-Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'azure'
+      apply:
+        description: 'Actually apply (chargeable resources)'
+        required: true
+        type: boolean
+        default: false
+
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      apply:
+        required: false
+        type: boolean
+        default: false
+
+env:
+  TF_VAR_enable_chargeable_resources: 'false'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: azure-plan-only
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Enforce zero-cost cloud guardrail
+        run: |
+          if [[ "${ADAPTIVEOPS_ALLOW_CLOUD_CHARGES:-false}" != "true" ]]; then
+            echo "ADAPTIVEOPS_ALLOW_CLOUD_CHARGES is not 'true'. Halting to prevent chargeable Azure resources."
+            exit 7
+          fi
+        env:
+          ADAPTIVEOPS_ALLOW_CLOUD_CHARGES: ${{ vars.ADAPTIVEOPS_ALLOW_CLOUD_CHARGES }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure Azure credentials via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform fmt + validate
+        run: |
+          terraform fmt -check
+          terraform validate
+        working-directory: deploy/terraform/azure
+
+      - name: Terraform plan (no apply)
+        run: terraform plan -var enable_chargeable_resources=false -out=tfplan
+        working-directory: deploy/terraform/azure
+        env:
+          ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Show plan summary
+        run: terraform show -no-color tfplan | head -200
+        working-directory: deploy/terraform/azure
+
+      - name: Guard against accidental apply
+        if: ${{ inputs.apply == true }}
+        run: |
+          echo "Chargeable apply explicitly requested but ADAPTIVEOPS_ALLOW_CLOUD_CHARGES is not set to true."
+          echo "Nothing was provisioned. Exit code 7."
+          exit 7

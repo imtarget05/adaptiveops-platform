@@ -1,0 +1,161 @@
+# AdaptiveOps Platform - Unified Target Configuration
+# Schema Version: 1.0.0
+version: "1.0.0"
+
+globals:
+  app_name: "adaptiveops"
+  default_target: "local"
+  notification_endpoint: "http://localhost:8787/api/audit"
+  health_check:
+    default_timeout_seconds: 60
+    default_interval_seconds: 5
+    default_retry_count: 5
+
+profiles:
+  # ============================================================================
+  # Profile: local (Docker Compose)
+  # ============================================================================
+  local:
+    description: "Local development Docker Compose profile"
+    type: "docker-compose"
+    environment: "development"
+    compose_file: "deploy/docker-compose/docker-compose.yml"
+    workloads:
+      - name: "order-service"
+        port: 8080
+        health_endpoint: "http://localhost:8080/actuator/health"
+      - name: "postgres"
+        image: "postgres:16-alpine"
+        port: 5432
+      - name: "rabbitmq"
+        image: "rabbitmq:3.13-management-alpine"
+        port: 5672
+      - name: "prometheus"
+        image: "prom/prometheus:v2.51.0"
+        port: 9090
+      - name: "grafana"
+        image: "grafana/grafana:10.4.0"
+        port: 3000
+    cost_control:
+      chargeable: false
+      cost_tier: "local-emulation"
+      budget_limit_usd: 0.00
+      require_approval: false
+    rollback:
+      enabled: true
+      strategy: "docker-compose-revert"
+      timeout_seconds: 45
+
+  # ============================================================================
+  # Profile: kubernetes (kind + Helm Rolling Deployment)
+  # ============================================================================
+  kubernetes:
+    description: "Local kind Kubernetes cluster with Helm rolling deployment"
+    type: "helm"
+    environment: "staging"
+    cluster:
+      name: "adaptiveops-cluster"
+      driver: "kind"
+      kind_config: "deploy/k8s/kind-config.yaml"
+    helm:
+      chart_path: "deploy/helm/adaptiveops-order-service"
+      release_name: "order-service"
+      namespace: "adaptiveops"
+      values_file: "deploy/helm/adaptiveops-order-service/values.yaml"
+      atomic: true
+      timeout: "180s"
+      wait: true
+    workloads:
+      - name: "order-service"
+        replicas: 2
+        port: 8080
+        service_type: "NodePort"
+        node_port: 30080
+        health_endpoint: "http://localhost:30080/actuator/health"
+    cost_control:
+      chargeable: false
+      cost_tier: "local-emulation"
+      budget_limit_usd: 0.00
+      require_approval: false
+    rollback:
+      enabled: true
+      strategy: "atomic-helm"
+      timeout_seconds: 90
+
+  # ============================================================================
+  # Profile: cloudflare (Workers + D1 + Pages)
+  # ============================================================================
+  cloudflare:
+    description: "Cloudflare Edge Workers + D1 + Pages profile"
+    type: "cloudflare-wrangler"
+    environment: "production"
+    worker:
+      directory: "control-plane"
+      config_file: "control-plane/wrangler.toml"
+      d1_database_name: "adaptiveops-db"
+      local_emulation_port: 8787
+      local_health_endpoint: "http://localhost:8787/api/health"
+    pages:
+      directory: "dashboard"
+      build_output: "dashboard/dist"
+      local_port: 5173
+    cost_control:
+      chargeable: false
+      cost_tier: "free-tier"
+      budget_limit_usd: 0.00
+      require_approval: false
+    rollback:
+      enabled: true
+      strategy: "wrangler-rollback"
+      timeout_seconds: 30
+
+  # ============================================================================
+  # Profile: aws (ECS Fargate Terraform - Cost-Guarded / Dry-Run)
+  # ============================================================================
+  aws:
+    description: "Amazon Web Services ECS Fargate target (zero-cost guarded)"
+    type: "terraform-aws"
+    environment: "cloud"
+    terraform_dir: "deploy/terraform/aws"
+    region: "us-east-1"
+    auth:
+      type: "oidc-github"
+      role_arn: "arn:aws:iam::123456789012:role/adaptiveops-github-oidc-role"
+      session_name: "GitHubActionsAdaptiveOpsDeploy"
+    cost_control:
+      chargeable: false
+      cost_tier: "cloud-dry-run-only"
+      budget_limit_usd: 0.00
+      plan_only: true
+      require_approval: true
+      override_flag: "ADAPTIVEOPS_ALLOW_CLOUD_CHARGES"
+    rollback:
+      enabled: true
+      strategy: "terraform-revert"
+      timeout_seconds: 300
+
+  # ============================================================================
+  # Profile: azure (Container Apps Terraform - Cost-Guarded / Dry-Run)
+  # ============================================================================
+  azure:
+    description: "Microsoft Azure Container Apps target (zero-cost guarded)"
+    type: "terraform-azure"
+    environment: "cloud"
+    terraform_dir: "deploy/terraform/azure"
+    location: "eastus"
+    auth:
+      type: "oidc-github"
+      client_id: "00000000-0000-0000-0000-000000000000"
+      tenant_id: "00000000-0000-0000-0000-000000000000"
+      subscription_id: "00000000-0000-0000-0000-000000000000"
+    cost_control:
+      chargeable: false
+      cost_tier: "cloud-dry-run-only"
+      budget_limit_usd: 0.00
+      plan_only: true
+      require_approval: true
+      override_flag: "ADAPTIVEOPS_ALLOW_CLOUD_CHARGES"
+    rollback:
+      enabled: true
+      strategy: "terraform-revert"
+      timeout_seconds: 300

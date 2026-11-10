@@ -1,0 +1,24 @@
+{
+  "name": "adaptiveops-control-plane",
+  "version": "1.0.0",
+  "description": "AdaptiveOps Platform - Cloudflare Workers + Hono Control Plane API",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy:preview": "bash ../scripts/render-cloudflare-preview-config.sh && wrangler deploy --env preview --config wrangler.preview.generated.toml",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.6.10"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.5.24",
+    "@cloudflare/workers-types": "^4.20241106.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9",
+    "wrangler": "^3.88.0"
+  }
+}

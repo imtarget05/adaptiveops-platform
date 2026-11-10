@@ -1,0 +1,3 @@
+# Copy to .dev.vars for local development only; never use real credentials here.
+ADMIN_API_KEY=replace-with-a-random-local-only-key
+GITHUB_WEBHOOK_SECRET=replace-with-a-local-only-webhook-secret
