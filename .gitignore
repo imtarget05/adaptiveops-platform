@@ -3,6 +3,7 @@ dist/
 target/
 .terraform/
 .terraform.lock.hcl.tmp
+deploy/terraform/*/.terraform.lock.hcl
 .DS_Store
 .agents/teamwork/
 .wrangler/
