@@ -46,5 +46,5 @@ jobs:
         run: |
           curl -s -X POST "${{ vars.CONTROL_PLANE_URL }}/api/v1/audit" \
             -H "Content-Type: application/json" \
-            -d "{\"actor\":\"github-actions\",\"action\":\"ROLLBACK_COMPLETED\",\"target_type\":\"rollback\",\"target_id\":\"${{ github.run_id }\},\"environment\":\"${{ inputs.environment }}\",\"details\":{\"version\":\"${{ steps.candidate.outputs.version }}\",\"reason\":\"${{ inputs.reason }}\",\"run_id\":\"${{ github.run_id }}\"}}"
+            -d "{\"actor\":\"github-actions\",\"action\":\"ROLLBACK_COMPLETED\",\"target_type\":\"rollback\",\"target_id\":\"${{ github.run_id }}\",\"environment\":\"${{ inputs.environment }}\",\"details\":{\"version\":\"${{ steps.candidate.outputs.version }}\",\"reason\":\"${{ inputs.reason }}\",\"run_id\":\"${{ github.run_id }}\"}}"
         if: vars.CONTROL_PLANE_URL != ''
