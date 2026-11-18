@@ -20,6 +20,12 @@ jobs:
   rollback:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      TARGET_ENVIRONMENT: ${{ inputs.environment }}
+      REQUESTED_VERSION: ${{ inputs.version }}
+      ROLLBACK_REASON: ${{ inputs.reason }}
+      CONTROL_PLANE_API_URL: ${{ vars.CONTROL_PLANE_URL }}
+      ADAPTIVEOPS_ALLOW_CLOUD_CHARGES: "false"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,24 +33,50 @@ jobs:
       - name: Resolve rollback candidate from Control Plane
         id: candidate
         run: |
-          CANDIDATE=$(curl -s --max-time 5 "${{ vars.CONTROL_PLANE_URL }}/api/v1/rollback/candidates/${{ inputs.environment }}" || true)
-          VERSION=$(echo "$CANDIDATE" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
-          echo "version=${VERSION:-1.0.0}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [[ ! "$TARGET_ENVIRONMENT" =~ ^[A-Za-z0-9_-]+$ ]]; then
+            echo 'Invalid target environment' >&2
+            exit 1
+          fi
+          VERSION="$REQUESTED_VERSION"
+          if [[ -z "$VERSION" && -n "$CONTROL_PLANE_API_URL" ]]; then
+            CANDIDATE=$(curl -fsS --max-time 5 "${CONTROL_PLANE_API_URL}/api/v1/rollback/candidates/${TARGET_ENVIRONMENT}" || true)
+            VERSION=$(jq -r '.version // empty' <<< "$CANDIDATE" 2>/dev/null || true)
+          fi
+          if [[ -z "$VERSION" ]]; then
+            echo 'No rollback version was supplied or resolved' >&2
+            exit 1
+          fi
+          if [[ ! "$VERSION" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo 'Invalid rollback version' >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Execute controlled rollback
         run: |
           bash scripts/rollback.sh \
-            --target "${{ inputs.environment }}" \
-            --to-version "${{ steps.candidate.outputs.version }}" \
-            --reason "${{ inputs.reason }}" \
-            --control-plane-url "${{ vars.CONTROL_PLANE_URL }}"
+            --target "$TARGET_ENVIRONMENT" \
+            --to-version "$ROLLBACK_VERSION" \
+            --reason "$ROLLBACK_REASON" \
+            --control-plane-url "$CONTROL_PLANE_API_URL"
         env:
-          CONTROL_PLANE_API_URL: ${{ vars.CONTROL_PLANE_URL }}
-          ADAPTIVEOPS_ALLOW_CLOUD_CHARGES: "false"
+          ROLLBACK_VERSION: ${{ steps.candidate.outputs.version }}
 
       - name: Record rollback audit
         run: |
-          curl -s -X POST "${{ vars.CONTROL_PLANE_URL }}/api/v1/audit" \
+          jq -n \
+            --arg actor github-actions \
+            --arg action ROLLBACK_COMPLETED \
+            --arg target_type rollback \
+            --arg target_id "$GITHUB_RUN_ID" \
+            --arg environment "$TARGET_ENVIRONMENT" \
+            --arg version "$ROLLBACK_VERSION" \
+            --arg reason "$ROLLBACK_REASON" \
+            '{actor:$actor,action:$action,target_type:$target_type,target_id:$target_id,environment:$environment,details:{version:$version,reason:$reason,run_id:$target_id}}' > audit.json
+          curl -fsS -X POST "${CONTROL_PLANE_API_URL}/api/v1/audit" \
             -H "Content-Type: application/json" \
-            -d "{\"actor\":\"github-actions\",\"action\":\"ROLLBACK_COMPLETED\",\"target_type\":\"rollback\",\"target_id\":\"${{ github.run_id }\},\"environment\":\"${{ inputs.environment }}\",\"details\":{\"version\":\"${{ steps.candidate.outputs.version }}\",\"reason\":\"${{ inputs.reason }}\",\"run_id\":\"${{ github.run_id }}\"}}"
+            --data-binary @audit.json
+        env:
+          ROLLBACK_VERSION: ${{ steps.candidate.outputs.version }}
         if: vars.CONTROL_PLANE_URL != ''
