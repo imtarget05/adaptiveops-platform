@@ -7,8 +7,8 @@ AdaptiveOps is a multi-service backend portfolio project exploring reliable webh
 - **Problem:** webhook delivery and releases need observable state, retry handling, and an auditable operator workflow.
 - **Architecture:** Hono/TypeScript API on Workers + D1; Java/Spring Boot order service + PostgreSQL; React/Vite dashboard.
 - **Reliability mechanisms:** status-aware delivery retries, delivery records, dead-letter handling, release health checks, and rollback records.
-- **Current evidence:** local control-plane suite (65 tests), TypeScript check, dashboard production build, ShellCheck, Terraform validation, and PostgreSQL Testcontainers concurrency integration are passing. SonarQube configuration is present but requires hosted `SONAR_HOST_URL` and `SONAR_TOKEN`; no hosted run is attached.
-- **Readiness:** production readiness is not established. The checks are local evidence, not proof of hosted gate enforcement or production operation.
+- **Current evidence:** [PR #1](https://github.com/imtarget05/adaptiveops-platform/pull/1) runs Java tests with PostgreSQL Testcontainers, TypeScript/dashboard, shell, Terraform, Trivy source/container scans, and SonarCloud analysis. The duplicate SonarQube Server job still requires `SONAR_HOST_URL` and `SONAR_TOKEN` repository configuration and is failing.
+- **Readiness:** production readiness is not established. PR checks are not evidence of a green main branch or production operation.
 
 ## Architecture and flow
 
@@ -48,7 +48,7 @@ The release flow records health-check and rollback state. A rollback request cre
 
 ## CI, security and verification
 
-The repository includes GitHub Actions workflows for Java, TypeScript/dashboard, shell and Terraform checks, plus Trivy and secret scanning. Current `npm audit` reports 15 dependency findings in the control-plane tree (3 critical, 9 high, 3 moderate); supported toolchain upgrades remain necessary. SonarQube Server analysis waits for the quality gate and fails when `SONAR_HOST_URL` or `SONAR_TOKEN` is absent. Local checks completed in this checkout; there are no hosted run links or branch-protection settings, so remote enforcement remains unverified.
+The repository includes GitHub Actions workflows for Java, TypeScript/dashboard, shell and Terraform checks, plus Trivy and secret scanning. [PR #1](https://github.com/imtarget05/adaptiveops-platform/pull/1) upgrades the Java workload to Spring Boot 4.1.2 and passes the Trivy source/container scans and SonarCloud PR quality gate. The SonarQube Server job still fails because `SONAR_HOST_URL` and `SONAR_TOKEN` are not configured for this repository. Earlier `npm audit` reported 15 dependency findings in the control-plane tree (3 critical, 9 high, 3 moderate); that historical result is not a current clearance. Branch protection is not configured, and main-branch CI for this PR has not been verified.
 
 The Worker preview configuration passed an offline Wrangler dry run using a placeholder D1 identifier. This validates configuration shape only; it does not prove that Cloudflare secrets, preview resources, or hosted services work.
 
@@ -57,8 +57,8 @@ The Worker preview configuration passed an offline Wrangler dry run using a plac
 | Area | Evidence in this repository | Assessment |
 |---|---|---|
 | Implementation | Multiple services, D1 migrations, retry/dead-letter logic, health and rollback paths | Substantial implementation; operational behavior still needs end-to-end proof |
-| Testing | 65 control-plane tests, one PostgreSQL-backed Java concurrency integration test, dashboard production build | These checks passed locally; full Java suite and hosted results remain unverified |
-| Security | SonarQube, Trivy, and secret-scanning workflow definitions | No hosted gate result or evidence of configured branch protection/reviewed findings |
+| Testing | 65 control-plane tests, PostgreSQL-backed Java integration tests, dashboard production build | PR #1 has hosted CI evidence; main-branch results after merge remain unverified |
+| Security | SonarCloud PR analysis and Trivy scans pass on PR #1 | SonarQube Server job lacks repository configuration; no evidence of branch protection |
 | Deployment | Compose, Helm, Terraform and a Cloudflare workflow | Cloudflare Worker step is dry-run; infrastructure examples are not deployment evidence |
 | Operations | Health endpoint and audit/rollback records | One dated health probe is limited evidence; no SLO, alerting, recovery drill or sustained run history established |
 
